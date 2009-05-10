@@ -37,9 +37,13 @@
 #include "xcbint.h"
 #if USE_POLL
 #include <poll.h>
-#else
+#elif !defined WIN32
 #include <sys/select.h>
 #endif
+
+#ifdef WIN32
+#include "windefs.h"
+#endif /* WIN32 */
 
 #define XCB_ERROR 0
 #define XCB_REPLY 1
@@ -262,6 +266,32 @@ static void free_reply_list(struct reply_list *head)
     }
 }
 
+#ifdef WIN32
+static int read_block(const int fd, void *buf, const size_t len)
+{
+    int done = 0;
+    while(done < len)
+    {        	
+	int ret = recv(fd, ((char *) buf) + done, len - done,0);		
+	
+        if(ret > 0)
+            done += ret;
+        if(ret == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK)
+        {
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(fd, &fds);
+	    /* the do while loop used for the non-windows version doesn't seem to be required*/
+	    /* for windows since there're no signals there hence no EINTR*/	    
+	    ret = select(fd + 1, &fds, 0, 0, 0);	    
+        }
+        if(ret <= 0)
+            return ret;
+		
+    }
+    return len;
+}
+#else
 static int read_block(const int fd, void *buf, const ssize_t len)
 {
     int done = 0;
@@ -294,6 +324,7 @@ static int read_block(const int fd, void *buf, const ssize_t len)
     }
     return len;
 }
+#endif
 
 static int poll_for_reply(xcb_connection_t *c, unsigned int request, void **reply, xcb_generic_error_t **error)
 {
@@ -553,6 +584,20 @@ void _xcb_in_replies_done(xcb_connection_t *c)
     }
 }
 
+#ifdef WIN32
+int _xcb_in_read(xcb_connection_t *c)
+{
+    int n = recv(c->fd, c->in.queue + c->in.queue_len, sizeof(c->in.queue) - c->in.queue_len,0);
+    if(n > 0)
+        c->in.queue_len += n;
+    while(read_packet(c))
+        /* empty */;
+    if((n > 0) || (n < 0 && WSAGetLastError() == WSAEWOULDBLOCK))
+        return 1;
+    _xcb_conn_shutdown(c);
+    return 0;
+}
+#else
 int _xcb_in_read(xcb_connection_t *c)
 {
     int n = read(c->fd, c->in.queue + c->in.queue_len, sizeof(c->in.queue) - c->in.queue_len);
@@ -565,6 +610,7 @@ int _xcb_in_read(xcb_connection_t *c)
     _xcb_conn_shutdown(c);
     return 0;
 }
+#endif /* WIN32 */
 
 int _xcb_in_read_block(xcb_connection_t *c, void *buf, int len)
 {

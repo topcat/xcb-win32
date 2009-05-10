@@ -27,20 +27,25 @@
 
 #include <assert.h>
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <netinet/in.h>
 #ifdef DNETCONN
 #include <netdnet/dnetdb.h>
 #include <netdnet/dn.h>
 #endif
-#include <netdb.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <unistd.h>
 #include <string.h>
+
+#ifdef WIN32
+#include "windefs.h"
+#else
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#endif /* WIN32 */
 
 #include "xcb.h"
 #include "xcbext.h"
@@ -120,7 +125,11 @@ int xcb_parse_display(const char *name, char **host, int *displayp,
 }
 
 static int _xcb_open_tcp(char *host, char *protocol, const unsigned short port);
+
+#ifndef WIN32
 static int _xcb_open_unix(char *protocol, const char *file);
+#endif /* !WIN32 */
+
 #ifdef DNETCONN
 static int _xcb_open_decnet(const char *host, char *protocol, const unsigned short port);
 #endif
@@ -161,6 +170,7 @@ static int _xcb_open(char *host, char *protocol, const int display)
             }
     }
 
+#ifndef WIN32
     /* display specifies Unix socket */
     filelen = snprintf(file, sizeof(file), "%s%d", base, display);
     if(filelen < 0)
@@ -174,6 +184,7 @@ static int _xcb_open(char *host, char *protocol, const int display)
 
 #endif
     return  _xcb_open_unix(protocol, file);
+#endif /* !WIN32 */
 }
 
 #ifdef DNETCONN
@@ -267,6 +278,7 @@ static int _xcb_open_tcp(char *host, char *protocol, const unsigned short port)
     return fd;
 }
 
+#ifndef WIN32
 static int _xcb_open_unix(char *protocol, const char *file)
 {
     int fd;
@@ -289,6 +301,7 @@ static int _xcb_open_unix(char *protocol, const char *file)
     }
     return fd;
 }
+#endif /* !WIN32 */
 
 #ifdef HAVE_ABSTRACT_SOCKETS
 static int _xcb_open_abstract(char *protocol, const char *file, size_t filelen)
@@ -362,3 +375,19 @@ xcb_connection_t *xcb_connect_to_display_with_auth_info(const char *displayname,
 
     return c;
 }
+
+#ifdef WIN32
+int initWSA(void)
+{
+    WSADATA wsd;
+    int rc;
+
+    // Load Winsock
+    rc = WSAStartup(MAKEWORD(2,2), &wsd);
+    if (rc != 0) 
+    {
+       fprintf(stderr, "Unable to load Winsock: %d\n", rc);
+    }
+    return rc; /* zero if successful or else return code of WSAStartup */
+}
+#endif /* !WIN32 */

@@ -30,7 +30,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <netinet/in.h>
 #include <fcntl.h>
 #include <errno.h>
 
@@ -38,9 +37,15 @@
 #include "xcbint.h"
 #if USE_POLL
 #include <poll.h>
-#else
+#elif !defined WIN32
 #include <sys/select.h>
 #endif
+
+#ifdef WIN32
+#include "windefs.h"
+#else
+#include <netinet/in.h>
+#endif /* WIN32 */
 
 typedef struct {
     uint8_t  status;
@@ -52,6 +57,20 @@ static const int error_connection = 1;
 
 static int set_fd_flags(const int fd)
 {
+/* Win32 doesn't have file descriptors and the fcntl function. This block sets the socket in non-blocking mode */
+
+#ifdef WIN32
+   u_long iMode = 1; /* non-zero puts it in non-blocking mode, 0 in blocking mode */   
+   int ret = 0;
+
+   ret = ioctlsocket(fd, FIONBIO, &iMode);
+   if(ret != 0) 
+   {
+       fprintf(stderr, "In set_fd_flags:ioctlsocket failed: %d\n", ret);
+       return 0;
+   }
+   return 1;
+#else
     int flags = fcntl(fd, F_GETFL, 0);
     if(flags == -1)
         return 0;
@@ -61,6 +80,7 @@ static int set_fd_flags(const int fd)
     if(fcntl(fd, F_SETFD, FD_CLOEXEC) == -1)
         return 0;
     return 1;
+#endif /* WIN32 */
 }
 
 static int write_setup(xcb_connection_t *c, xcb_auth_info_t *auth_info)
@@ -151,6 +171,59 @@ static int read_setup(xcb_connection_t *c)
     return 1;
 }
 
+#ifdef WIN32
+/* Win32 version of write_vec */
+/* precondition: there must be something for us to write. */
+static int write_vec(xcb_connection_t *c, struct iovec **vector, int *count)
+{
+    int num_sent = 0,i = 0;
+    int ret = 0,err = 0;
+    struct iovec *vec;        
+    assert(!c->out.queue_len);
+   
+
+    /* Could use the WSASend win32 function for scatter/gather i/o but setting up the WSABUF struct from
+	an iovec would require more work and I'm not sure of the benefit....works for now */
+    vec = *vector;
+    while(i < *count)
+    {         	 
+         ret = send(c->fd,vec->iov_base,vec->iov_len,0);	 
+	 if(ret == SOCKET_ERROR)
+	 {
+	     err  = WSAGetLastError();
+	     if(err == WSAEWOULDBLOCK)
+	     {
+	         return 1;
+	     }
+	 }
+	 num_sent += ret;
+         *vec++;
+	 i++;
+    }
+    
+    if(num_sent <= 0)
+    {      	
+         _xcb_conn_shutdown(c);
+         return 0;
+    }    
+
+    for(; *count; --*count, ++*vector)
+    {
+         int cur = (*vector)->iov_len;
+         if(cur > num_sent)
+             cur = num_sent;
+         (*vector)->iov_len -= cur;
+         (*vector)->iov_base = (char *) (*vector)->iov_base + cur;
+         num_sent -= cur;
+         if((*vector)->iov_len)
+             break;
+    }
+    if(!*count)
+         *vector = 0;
+    assert(num_sent == 0);
+    return 1;
+}
+#else
 /* precondition: there must be something for us to write. */
 static int write_vec(xcb_connection_t *c, struct iovec **vector, int *count)
 {
@@ -181,6 +254,7 @@ static int write_vec(xcb_connection_t *c, struct iovec **vector, int *count)
     assert(n == 0);
     return 1;
 }
+#endif /* WIN32 */
 
 /* Public interface */
 
@@ -250,6 +324,10 @@ void xcb_disconnect(xcb_connection_t *c)
     _xcb_xid_destroy(c);
 
     free(c);
+
+    #ifdef WIN32
+    WSACleanup();
+    #endif /* WIN32 */
 }
 
 /* Private interface */
