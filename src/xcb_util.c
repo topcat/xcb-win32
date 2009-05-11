@@ -235,6 +235,14 @@ static int _xcb_open_tcp(char *host, char *protocol, const unsigned short port)
     struct addrinfo *results, *addr;
     char *bracket;
 
+    #ifdef WIN32    
+    if(initWSA() != 0)  /* initialize the Winsock layer for Win32 */
+    {
+      fprintf(stderr,"\ninitWSA failed\n");
+      return -1;
+    }
+    #endif /* !WIN32 */
+
     if (protocol && strcmp("tcp",protocol))
         return -1;
 
