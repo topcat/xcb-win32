@@ -41,11 +41,11 @@
 #include <sys/select.h>
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
 #include "windefs.h"
 #else
 #include <netinet/in.h>
-#endif /* WIN32 */
+#endif /* _WIN32 */
 
 typedef struct {
     uint8_t  status;
@@ -59,16 +59,13 @@ static int set_fd_flags(const int fd)
 {
 /* Win32 doesn't have file descriptors and the fcntl function. This block sets the socket in non-blocking mode */
 
-#ifdef WIN32
+#ifdef _WIN32
    u_long iMode = 1; /* non-zero puts it in non-blocking mode, 0 in blocking mode */   
    int ret = 0;
 
    ret = ioctlsocket(fd, FIONBIO, &iMode);
    if(ret != 0) 
-   {
-       fprintf(stderr, "In set_fd_flags:ioctlsocket failed: %d\n", ret);
        return 0;
-   }
    return 1;
 #else
     int flags = fcntl(fd, F_GETFL, 0);
@@ -171,19 +168,20 @@ static int read_setup(xcb_connection_t *c)
     return 1;
 }
 
-#ifdef WIN32
-/* Win32 version of write_vec */
 /* precondition: there must be something for us to write. */
 static int write_vec(xcb_connection_t *c, struct iovec **vector, int *count)
 {
-    int num_sent = 0,i = 0;
-    int ret = 0,err = 0;
-    struct iovec *vec;        
+    int n;
     assert(!c->out.queue_len);
-   
+
+#ifdef _WIN32
+    int i = 0;
+    int ret = 0,err = 0;
+    struct iovec *vec;
+    n = 0;
 
     /* Could use the WSASend win32 function for scatter/gather i/o but setting up the WSABUF struct from
-	an iovec would require more work and I'm not sure of the benefit....works for now */
+       an iovec would require more work and I'm not sure of the benefit....works for now */
     vec = *vector;
     while(i < *count)
     {         	 
@@ -196,42 +194,16 @@ static int write_vec(xcb_connection_t *c, struct iovec **vector, int *count)
 	         return 1;
 	     }
 	 }
-	 num_sent += ret;
+	 n += ret;
          *vec++;
 	 i++;
     }
-    
-    if(num_sent <= 0)
-    {      	
-         _xcb_conn_shutdown(c);
-         return 0;
-    }    
-
-    for(; *count; --*count, ++*vector)
-    {
-         int cur = (*vector)->iov_len;
-         if(cur > num_sent)
-             cur = num_sent;
-         (*vector)->iov_len -= cur;
-         (*vector)->iov_base = (char *) (*vector)->iov_base + cur;
-         num_sent -= cur;
-         if((*vector)->iov_len)
-             break;
-    }
-    if(!*count)
-         *vector = 0;
-    assert(num_sent == 0);
-    return 1;
-}
 #else
-/* precondition: there must be something for us to write. */
-static int write_vec(xcb_connection_t *c, struct iovec **vector, int *count)
-{
-    int n;
-    assert(!c->out.queue_len);
     n = writev(c->fd, *vector, *count);
     if(n < 0 && errno == EAGAIN)
         return 1;
+#endif /* _WIN32 */
+
     if(n <= 0)
     {
         _xcb_conn_shutdown(c);
@@ -252,9 +224,9 @@ static int write_vec(xcb_connection_t *c, struct iovec **vector, int *count)
     if(!*count)
         *vector = 0;
     assert(n == 0);
+
     return 1;
 }
-#endif /* WIN32 */
 
 /* Public interface */
 
@@ -324,10 +296,6 @@ void xcb_disconnect(xcb_connection_t *c)
     _xcb_xid_destroy(c);
 
     free(c);
-
-    #ifdef WIN32
-    WSACleanup();
-    #endif /* WIN32 */
 }
 
 /* Private interface */

@@ -31,13 +31,13 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#ifdef WIN32
+#ifdef _WIN32
 #include "windefs.h"
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/un.h>
-#endif /* WIN32 */
+#endif /* _WIN32 */
 
 #include "xcb.h"
 #include "xcbint.h"

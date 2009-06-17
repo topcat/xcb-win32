@@ -27,7 +27,9 @@
 #ifndef _WINDEFS_H
 #define _WINDEFS_H
 
+#ifndef WINVER
 #define WINVER 0x0501 /* required for getaddrinfo/freeaddrinfo defined only for WinXP and above */
+#endif
 
 #include <winsock2.h>
 #include <ws2tcpip.h>

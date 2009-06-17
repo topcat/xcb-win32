@@ -35,7 +35,7 @@
 #include <stdint.h>
 #endif
 
-#ifndef WIN32
+#ifndef _WIN32
 #include <sys/uio.h>
 #else
 #include "windefs.h"
@@ -458,11 +458,6 @@ xcb_connection_t *xcb_connect_to_display_with_auth_info(const char *display, xcb
  * various object creation functions, such as xcb_create_window.
  */
 uint32_t xcb_generate_id(xcb_connection_t *c);
-
-#ifdef WIN32
-/* required for Winsock initialization under Win32 */
-int initWSA(void);
-#endif /* !WIN32 */
 
 
 /**
