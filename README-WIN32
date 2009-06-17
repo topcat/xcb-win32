@@ -1,0 +1,4 @@
+Notes:
+
+- The Win32 port of XCB depends on Winsock, therefore Winsock Initialzation (using WSAStartup) needs to be done by the application prior to calling the functions in this library. Subsequently, winsock cleanup (using WSACleanup) is also the responsibility of the application.
+
